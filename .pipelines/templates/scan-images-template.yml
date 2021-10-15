@@ -2,9 +2,7 @@ steps:
   - script: |
       export REGISTRY="e2e"
       export IMAGE_VERSION="test"
-      export OUTPUT_TYPE="type=docker"
-      make docker-init-buildx docker-build
-
+      make build-image
       wget https://github.com/aquasecurity/trivy/releases/download/v$(TRIVY_VERSION)/trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz
       tar zxvf trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz
 
