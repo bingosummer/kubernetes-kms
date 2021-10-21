@@ -10,6 +10,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/Azure/kubernetes-kms/pkg/auth"
 	"github.com/Azure/kubernetes-kms/pkg/config"
@@ -33,12 +36,13 @@ type keyVaultClient struct {
 	vaultName        string
 	keyName          string
 	keyVersion       string
+	autoRotateKey    bool
 	vaultURL         string
 	azureEnvironment *azure.Environment
 }
 
 // NewKeyVaultClient returns a new key vault client to use for kms operations
-func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion string, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
+func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion string, autoRotateKey bool, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
 	// Sanitize vaultName, keyName, keyVersion. (https://github.com/Azure/kubernetes-kms/issues/85)
 	vaultName = utils.SanitizeString(vaultName)
 	keyName = utils.SanitizeString(keyName)
@@ -46,8 +50,11 @@ func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersio
 
 	// this should be the case for bring your own key, clusters bootstrapped with
 	// aks-engine or aks and standalone kms plugin deployments
-	if len(vaultName) == 0 || len(keyName) == 0 || len(keyVersion) == 0 {
-		return nil, fmt.Errorf("key vault name, key name and key version are required")
+	if len(vaultName) == 0 || len(keyName) == 0 {
+		return nil, fmt.Errorf("key vault name, key name are required")
+	}
+	if !autoRotateKey && len(keyVersion) == 0 {
+		return nil, fmt.Errorf("One of key version and auto rotate key is required")
 	}
 	kvClient := kv.New()
 	err := kvClient.AddToUserAgent(version.GetUserAgent())
@@ -85,6 +92,7 @@ func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersio
 		vaultName:        vaultName,
 		keyName:          keyName,
 		keyVersion:       keyVersion,
+		autoRotateKey:    autoRotateKey,
 		vaultURL:         proxyEndpoint,
 		azureEnvironment: env,
 	}
@@ -98,10 +106,24 @@ func (kvc *keyVaultClient) Encrypt(ctx context.Context, cipher []byte) ([]byte, 
 		Algorithm: kv.RSA15,
 		Value:     &value,
 	}
-	result, err := kvc.baseClient.Encrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion, params)
+
+	keyVersion := kvc.keyVersion
+	if kvc.autoRotateKey {
+		keys, err := kvc.getKeyVersions(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get key versions, error: %+v", err)
+		}
+		kid := *keys[0].Kid
+		keyVersion = kid[strings.LastIndex(kid, "/")+1:]
+	}
+
+	result, err := kvc.baseClient.Encrypt(ctx, kvc.vaultURL, kvc.keyName, keyVersion, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt, error: %+v", err)
 	}
+
+	klog.InfoS("encrypt successfully", "key version", keyVersion)
+
 	return []byte(*result.Result), nil
 }
 
@@ -113,15 +135,64 @@ func (kvc *keyVaultClient) Decrypt(ctx context.Context, plain []byte) ([]byte, e
 		Value:     &value,
 	}
 
-	result, err := kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt, error: %+v", err)
+	var (
+		result kv.KeyOperationResult
+		err    error
+	)
+	if kvc.autoRotateKey {
+		keys, err := kvc.getKeyVersions(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get key versions, error: %+v", err)
+		}
+
+		for _, key := range keys {
+			kid := *key.Kid
+			keyVersion := kid[strings.LastIndex(kid, "/")+1:]
+			result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, keyVersion, params)
+			if err != nil {
+				klog.InfoS("failed to decrypt", "key version", keyVersion)
+				continue
+			}
+			klog.InfoS("decrypt successfully", "key version", keyVersion)
+			break
+		}
+	} else {
+		result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt, error: %+v", err)
+		}
 	}
+
 	bytes, err := base64.RawURLEncoding.DecodeString(*result.Result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64 decode result, error: %+v", err)
 	}
+
 	return bytes, nil
+}
+
+func (kvc *keyVaultClient) getKeyVersions(ctx context.Context) ([]kv.KeyItem, error) {
+	keyList, err := kvc.baseClient.GetKeyVersions(ctx, kvc.vaultURL, kvc.keyName, nil)
+	if err != nil {
+		return nil, err
+	}
+	keys := keyList.Values()
+	keys = filterEnabledKeysAndSortByCreatingTime(keys)
+	return keys, nil
+}
+
+func filterEnabledKeysAndSortByCreatingTime(keys []kv.KeyItem) []kv.KeyItem {
+	var newKeys []kv.KeyItem
+	for _, key := range keys {
+		if !*key.Attributes.Enabled {
+			continue
+		}
+		newKeys = append(newKeys, key)
+	}
+	sort.Slice(newKeys, func(i, j int) bool {
+		return time.Time(*newKeys[i].Attributes.Created).After(time.Time(*newKeys[j].Attributes.Created))
+	})
+	return newKeys
 }
 
 func getVaultURL(vaultName string, azureEnvironment *azure.Environment) (vaultURL *string, err error) {
