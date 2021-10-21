@@ -31,7 +31,8 @@ var (
 	listenAddr    = flag.String("listen-addr", "unix:///opt/azurekms.socket", "gRPC listen address")
 	keyvaultName  = flag.String("keyvault-name", "", "Azure Key Vault name")
 	keyName       = flag.String("key-name", "", "Azure Key Vault KMS key name")
-	keyVersion    = flag.String("key-version", "", "Azure Key Vault KMS key version")
+	keyVersion1   = flag.String("key-version-1", "", "Azure Key Vault KMS key version")
+	keyVersion2   = flag.String("key-version-2", "", "Azure Key Vault KMS key version")
 	logFormatJSON = flag.Bool("log-format-json", false, "set log formatter to json")
 	// TODO remove this flag in future release.
 	_              = flag.String("configFilePath", "/etc/kubernetes/azure.json", "[DEPRECATED] Path for Azure Cloud Provider config file")
@@ -72,7 +73,10 @@ func main() {
 	}
 
 	klog.InfoS("Starting KeyManagementServiceServer service", "version", version.BuildVersion, "buildDate", version.BuildDate)
-	kmsServer, err := plugin.New(ctx, *configFilePath, *keyvaultName, *keyName, *keyVersion, *proxyMode, *proxyAddress, *proxyPort)
+	kmsServer, err := plugin.New(ctx, *configFilePath,
+		*keyvaultName, *keyName, *keyVersion1, *keyVersion2,
+		*proxyMode, *proxyAddress, *proxyPort,
+	)
 	if err != nil {
 		klog.Fatalf("failed to create server, error: %v", err)
 	}

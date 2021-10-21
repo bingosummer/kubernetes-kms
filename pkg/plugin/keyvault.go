@@ -32,22 +32,24 @@ type keyVaultClient struct {
 	config           *config.AzureConfig
 	vaultName        string
 	keyName          string
-	keyVersion       string
+	keyVersion1      string
+	keyVersion2      string
 	vaultURL         string
 	azureEnvironment *azure.Environment
 }
 
 // NewKeyVaultClient returns a new key vault client to use for kms operations
-func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion string, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
+func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion1, keyVersion2 string, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
 	// Sanitize vaultName, keyName, keyVersion. (https://github.com/Azure/kubernetes-kms/issues/85)
 	vaultName = utils.SanitizeString(vaultName)
 	keyName = utils.SanitizeString(keyName)
-	keyVersion = utils.SanitizeString(keyVersion)
+	keyVersion1 = utils.SanitizeString(keyVersion1)
+	keyVersion2 = utils.SanitizeString(keyVersion2)
 
 	// this should be the case for bring your own key, clusters bootstrapped with
 	// aks-engine or aks and standalone kms plugin deployments
-	if len(vaultName) == 0 || len(keyName) == 0 || len(keyVersion) == 0 {
-		return nil, fmt.Errorf("key vault name, key name and key version are required")
+	if len(vaultName) == 0 || len(keyName) == 0 || len(keyVersion1) == 0 {
+		return nil, fmt.Errorf("key vault name, key name, key version are required")
 	}
 	kvClient := kv.New()
 	err := kvClient.AddToUserAgent(version.GetUserAgent())
@@ -71,20 +73,21 @@ func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersio
 		return nil, fmt.Errorf("failed to get vault url, error: %+v", err)
 	}
 
-	klog.InfoS("using kms key for encrypt/decrypt", "vaultURL", *vaultURL, "keyName", keyName, "keyVersion", keyVersion)
+	klog.InfoS("using kms key for encrypt/decrypt", "vaultURL", *vaultURL, "keyName", keyName)
 
 	var proxyEndpoint string
 	if proxyMode {
 		proxyEndpoint = fmt.Sprintf("http://%s:%d/KeyVault/%s", proxyAddress, proxyPort, (*vaultURL)[8:])
 	}
-
 	klog.InfoS("proxy url", "url", proxyEndpoint)
+
 	client := &keyVaultClient{
 		baseClient:       kvClient,
 		config:           config,
 		vaultName:        vaultName,
 		keyName:          keyName,
-		keyVersion:       keyVersion,
+		keyVersion1:      keyVersion1,
+		keyVersion2:      keyVersion2,
 		vaultURL:         proxyEndpoint,
 		azureEnvironment: env,
 	}
@@ -98,10 +101,14 @@ func (kvc *keyVaultClient) Encrypt(ctx context.Context, cipher []byte) ([]byte, 
 		Algorithm: kv.RSA15,
 		Value:     &value,
 	}
-	result, err := kvc.baseClient.Encrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion, params)
+
+	result, err := kvc.baseClient.Encrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion1, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt, error: %+v", err)
 	}
+
+	klog.InfoS("encrypt successfully", "key version", kvc.keyVersion1)
+
 	return []byte(*result.Result), nil
 }
 
@@ -113,14 +120,27 @@ func (kvc *keyVaultClient) Decrypt(ctx context.Context, plain []byte) ([]byte, e
 		Value:     &value,
 	}
 
-	result, err := kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion, params)
+	var (
+		result kv.KeyOperationResult
+		err    error
+	)
+
+	result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion1, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt, error: %+v", err)
+		result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion2, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt, err: %+v", err)
+		}
+		klog.InfoS("decrypt successfully", "key version", kvc.keyVersion2)
+	} else {
+		klog.InfoS("decrypt successfully", "key version", kvc.keyVersion1)
 	}
+
 	bytes, err := base64.RawURLEncoding.DecodeString(*result.Result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64 decode result, error: %+v", err)
 	}
+
 	return bytes, nil
 }
 
