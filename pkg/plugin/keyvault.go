@@ -109,6 +109,7 @@ func (kvc *keyVaultClient) Encrypt(ctx context.Context, cipher []byte) ([]byte, 
 
 	klog.InfoS("encrypt successfully", "key version", kvc.keyVersion1)
 
+	klog.InfoS("binxi-test: encrypt successfully", "key version", kvc.keyVersion1, "from", value, "to", *result.Result)
 	return []byte(*result.Result), nil
 }
 
@@ -126,20 +127,24 @@ func (kvc *keyVaultClient) Decrypt(ctx context.Context, plain []byte) ([]byte, e
 	)
 
 	result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion1, params)
-	if err != nil {
+	if err == nil {
+		klog.InfoS("decrypt successfully", "key version", kvc.keyVersion1)
+	} else if kvc.keyVersion2 != "" {
 		result, err = kvc.baseClient.Decrypt(ctx, kvc.vaultURL, kvc.keyName, kvc.keyVersion2, params)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt, err: %+v", err)
+			return nil, fmt.Errorf("failed to decrypt with key version %s, err: %+v", kvc.keyVersion2, err)
 		}
 		klog.InfoS("decrypt successfully", "key version", kvc.keyVersion2)
 	} else {
-		klog.InfoS("decrypt successfully", "key version", kvc.keyVersion1)
+		return nil, fmt.Errorf("failed to decrypt with key version %s for %s, err: %+v", kvc.keyVersion1, value, err)
 	}
 
 	bytes, err := base64.RawURLEncoding.DecodeString(*result.Result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64 decode result, error: %+v", err)
 	}
+
+	klog.InfoS("binxi-test: decrypt successfully", "from", value, "to", *result.Result)
 
 	return bytes, nil
 }

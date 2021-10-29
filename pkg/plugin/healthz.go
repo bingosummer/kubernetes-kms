@@ -63,20 +63,20 @@ func (h *HealthZ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check the configured keyvault, key, key version and permissions are still
 	// valid to encrypt and decrypt with test data.
 	// TODO: uncomment
-	// enc, err := h.KMSServer.Encrypt(ctx, &pb.EncryptRequest{Plain: []byte(healthCheckPlainText)})
-	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 	return
-	// }
-	// dec, err := h.KMSServer.Decrypt(ctx, &pb.DecryptRequest{Cipher: enc.Cipher})
-	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 	return
-	// }
-	// if string(dec.Plain) != healthCheckPlainText {
-	// 	http.Error(w, "plain text mismatch after decryption", http.StatusInternalServerError)
-	// 	return
-	// }
+	enc, err := h.KMSServer.Encrypt(ctx, &pb.EncryptRequest{Plain: []byte(healthCheckPlainText)})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	dec, err := h.KMSServer.Decrypt(ctx, &pb.DecryptRequest{Cipher: enc.Cipher})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if string(dec.Plain) != healthCheckPlainText {
+		http.Error(w, "plain text mismatch after decryption", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
 	klog.V(5).Infof("Completed health check")
