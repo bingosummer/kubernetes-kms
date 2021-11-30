@@ -163,6 +163,9 @@ func (kvc *keyVaultClient) Decrypt(ctx context.Context, plain []byte) ([]byte, e
 		}
 	}
 
+	if result.Request == nil {
+		return nil, fmt.Errorf("failed to decrypt, error: %+v", err)
+	}
 	bytes, err := base64.RawURLEncoding.DecodeString(*result.Result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to base64 decode result, error: %+v", err)

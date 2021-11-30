@@ -7,6 +7,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Azure/kubernetes-kms/pkg/config"
@@ -64,6 +65,7 @@ func (s *KeyManagementServiceServer) Encrypt(ctx context.Context, request *k8spb
 	}()
 
 	klog.V(2).Infof("encrypt request started")
+	klog.V(2).Infof(fmt.Sprintf("binxi-test: request.Plain %s", request.Plain))
 	cipher, err := s.kvClient.Encrypt(ctx, request.Plain)
 	if err != nil {
 		klog.ErrorS(err, "failed to encrypt")
@@ -89,6 +91,7 @@ func (s *KeyManagementServiceServer) Decrypt(ctx context.Context, request *k8spb
 	}()
 
 	klog.V(2).Infof("decrypt request started")
+	klog.V(2).Infof(fmt.Sprintf("binxi-test: request.Cipher %s", request.Cipher))
 	plain, err := s.kvClient.Decrypt(ctx, request.Cipher)
 	if err != nil {
 		klog.ErrorS(err, "failed to decrypt")
