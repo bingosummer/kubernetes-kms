@@ -45,7 +45,7 @@ var (
 	metricsAddress = flag.String("metrics-addr", "8095", "The address the metric endpoint binds to")
 
 	proxyMode    = flag.Bool("proxy-mode", false, "Proxy mode")
-	proxyAddress = flag.String("proxy-address", "172.25.73.101", "proxy address")
+	proxyAddress = flag.String("proxy-address", "", "proxy address")
 	proxyPort    = flag.Int("proxy-port", 7788, "port for proxy")
 )
 
