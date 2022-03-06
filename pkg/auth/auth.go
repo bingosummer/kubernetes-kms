@@ -46,7 +46,6 @@ func GetServicePrincipalToken(config *config.AzureConfig, aadEndpoint, resource 
 		return nil, fmt.Errorf("failed to create OAuth config, error: %v", err)
 	}
 
-	klog.V(2).Infof("binxi-test: token url: %s", oauthConfig.TokenEndpoint.String())
 	if config.UseManagedIdentityExtension {
 		klog.V(2).Infof("using managed identity extension to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
