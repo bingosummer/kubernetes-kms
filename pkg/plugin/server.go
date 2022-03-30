@@ -24,12 +24,12 @@ type KeyManagementServiceServer struct {
 }
 
 // New creates an instance of the KMS Service Server.
-func New(ctx context.Context, configFilePath, vaultName, keyName, keyVersion string, proxyMode bool, proxyAddress string, proxyPort int) (*KeyManagementServiceServer, error) {
+func New(ctx context.Context, configFilePath, vaultName, keyName, keyVersion, keyvaultDNSSuffix string, proxyMode bool, proxyAddress string, proxyPort int) (*KeyManagementServiceServer, error) {
 	cfg, err := config.GetAzureConfig(configFilePath)
 	if err != nil {
 		return nil, err
 	}
-	kvClient, err := newKeyVaultClient(cfg, vaultName, keyName, keyVersion, proxyMode, proxyAddress, proxyPort)
+	kvClient, err := newKeyVaultClient(cfg, vaultName, keyName, keyVersion, keyvaultDNSSuffix, proxyMode, proxyAddress, proxyPort)
 	if err != nil {
 		return nil, err
 	}

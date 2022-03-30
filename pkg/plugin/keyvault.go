@@ -41,11 +41,12 @@ type keyVaultClient struct {
 }
 
 // NewKeyVaultClient returns a new key vault client to use for kms operations
-func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion string, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
+func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersion, keyvaultDNSSuffix string, proxyMode bool, proxyAddress string, proxyPort int) (*keyVaultClient, error) {
 	// Sanitize vaultName, keyName, keyVersion. (https://github.com/Azure/kubernetes-kms/issues/85)
 	vaultName = utils.SanitizeString(vaultName)
 	keyName = utils.SanitizeString(keyName)
 	keyVersion = utils.SanitizeString(keyVersion)
+	keyvaultDNSSuffix = utils.SanitizeString(keyvaultDNSSuffix)
 
 	// this should be the case for bring your own key, clusters bootstrapped with
 	// aks-engine or aks and standalone kms plugin deployments
@@ -65,13 +66,13 @@ func newKeyVaultClient(config *config.AzureConfig, vaultName, keyName, keyVersio
 		env.ActiveDirectoryEndpoint = fmt.Sprintf("http://%s:%d/", proxyAddress, proxyPort)
 	}
 
-	token, err := auth.GetKeyvaultToken(config, env, proxyMode)
+	token, err := auth.GetKeyvaultToken(config, env, keyvaultDNSSuffix, proxyMode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key vault token, error: %+v", err)
 	}
 	kvClient.Authorizer = token
 
-	vaultURL, err := getVaultURL(vaultName, env)
+	vaultURL, err := getVaultURL(vaultName, keyvaultDNSSuffix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vault url, error: %+v", err)
 	}
@@ -128,7 +129,7 @@ func (kvc *keyVaultClient) Decrypt(ctx context.Context, plain []byte) ([]byte, e
 	return bytes, nil
 }
 
-func getVaultURL(vaultName string, azureEnvironment *azure.Environment) (vaultURL *string, err error) {
+func getVaultURL(vaultName, keyvaultDNSSuffix string) (vaultURL *string, err error) {
 	// Key Vault name must be a 3-24 character string
 	if len(vaultName) < 3 || len(vaultName) > 24 {
 		return nil, fmt.Errorf("invalid vault name: %q, must be between 3 and 24 chars", vaultName)
@@ -140,8 +141,7 @@ func getVaultURL(vaultName string, azureEnvironment *azure.Environment) (vaultUR
 		return nil, fmt.Errorf("invalid vault name: %q, must match [-a-zA-Z0-9]{3,24}", vaultName)
 	}
 
-	vaultDNSSuffixValue := azureEnvironment.KeyVaultDNSSuffix
-	vaultURI := "https://" + vaultName + "." + vaultDNSSuffixValue + "/"
+	vaultURI := "https://" + vaultName + "." + keyvaultDNSSuffix + "/"
 
 	return &vaultURI, nil
 }

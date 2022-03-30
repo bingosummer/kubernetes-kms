@@ -25,8 +25,8 @@ import (
 )
 
 // GetKeyvaultToken() returns token for Keyvault endpoint
-func GetKeyvaultToken(config *config.AzureConfig, env *azure.Environment, proxyMode bool) (authorizer autorest.Authorizer, err error) {
-	kvEndPoint := strings.TrimSuffix(env.KeyVaultEndpoint, "/")
+func GetKeyvaultToken(config *config.AzureConfig, env *azure.Environment, keyvaultDNSSuffix string, proxyMode bool) (authorizer autorest.Authorizer, err error) {
+	kvEndPoint := fmt.Sprintf("https://%s", strings.TrimSuffix(keyvaultDNSSuffix, "/"))
 	servicePrincipalToken, err := GetServicePrincipalToken(config, env.ActiveDirectoryEndpoint, kvEndPoint, proxyMode)
 	if err != nil {
 		return nil, err
